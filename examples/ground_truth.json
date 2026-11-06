@@ -1,0 +1,165 @@
+{
+  "schema": "miocard.ground_truth/1",
+  "about": [
+    "Hand transcription of the five example photographs. Everything here was read",
+    "off the picture by eye, not produced by the pipeline, so it can be used to",
+    "score the pipeline without circularity.",
+    "",
+    "lead_label_y is the y of the printed lead label in the SOURCE JPEG (before",
+    "deskew, crop and rescale). It is accurate to a few pixels, which is an order",
+    "of magnitude finer than the ~70 px row pitch, so it is good enough to answer",
+    "'was this lead found at all', not to score sub-pixel baseline placement.",
+    "",
+    "printed_measurements are the recorder's own numbers from the header block.",
+    "Only photo_296 has the whole block inside the frame; the others are cropped",
+    "and carry the tail of it, so 'rate_bpm' truth exists for exactly one sheet.",
+    "That is a fact about the sample, not an oversight."
+  ],
+  "records": [
+    {
+      "file": "photo_243@16-07-2026_13-40-55.jpg",
+      "source_size": [1278, 1003],
+      "layout": {"columns": 1, "rows": 12, "order": "standard_12x1"},
+      "lead_label_y": {
+        "I": 18, "II": 100, "III": 188, "aVR": 270, "aVL": 352, "aVF": 437,
+        "V1": 518, "V2": 597, "V3": 680, "V4": 762, "V5": 843, "V6": 915
+      },
+      "paper": {
+        "footer": "Base:0Hz LPF:150Hz AC:50Hz EMG:On   10.0/5.0mm/mV   25.0mm/sec   EKG2000 6.03/3.25 Bionet Co., Ltd.",
+        "speed_mm_s": 25.0,
+        "gain_mm_mv": 10.0,
+        "chest_gain_mm_mv": 5.0
+      },
+      "header_visible": "none",
+      "printed_measurements": null,
+      "notes": [
+        "The header block is cropped away entirely; the sheet starts at lead I.",
+        "The footer prints 10.0/5.0 mm/mV: limb leads at 10, chest leads at 5.",
+        "A pipeline that assumes a single gain reports the chest leads at twice",
+        "their true amplitude here."
+      ]
+    },
+    {
+      "file": "photo_244@16-07-2026_13-41-02.jpg",
+      "source_size": [1278, 861],
+      "layout": {"columns": 1, "rows": 12, "order": "standard_12x1"},
+      "lead_label_y": {
+        "I": 23, "II": 88, "III": 150, "aVR": 215, "aVL": 285, "aVF": 352,
+        "V1": 420, "V2": 505, "V3": 565, "V4": 645, "V5": 712, "V6": 790
+      },
+      "paper": {
+        "footer": "Base:0Hz LPF:150Hz AC:50Hz EMG:On   10.0mm/mV   25.0mm/sec   EKG2000 6.03/3.25 Bionet Co., Ltd.",
+        "speed_mm_s": 25.0,
+        "gain_mm_mv": 10.0,
+        "chest_gain_mm_mv": null
+      },
+      "header_visible": "partial",
+      "printed_measurements": {
+        "sv1_rv5_sum_mv": [0.00, 1.01, 1.01],
+        "interpretation": ["Normal Axis", "[ Minimally Abnormal or Normal Variation ECG ]"]
+      },
+      "notes": [
+        "Only the last header line survives the crop; there is no printed rate.",
+        "Lead I has no visible label - the crop cuts through it - but its trace is",
+        "in frame, so the row is annotated from the trace."
+      ]
+    },
+    {
+      "file": "photo_293@22-07-2026_18-29-03.jpg",
+      "source_size": [1278, 928],
+      "layout": {"columns": 1, "rows": 12, "order": "standard_12x1"},
+      "lead_label_y": {
+        "I": 78, "II": 135, "III": 210, "aVR": 288, "aVL": 355, "aVF": 428,
+        "V1": 500, "V2": 562, "V3": 638, "V4": 708, "V5": 782, "V6": 855
+      },
+      "paper": {
+        "footer": "Base:0Hz LPF:150Hz AC:50Hz EMG:On   10.0mm/mV   25.0mm/sec   EKG2000 6.03/3.25 Bionet Co., Ltd.",
+        "speed_mm_s": 25.0,
+        "gain_mm_mv": 10.0,
+        "chest_gain_mm_mv": null
+      },
+      "header_visible": "partial",
+      "printed_measurements": {
+        "prt_axes_deg": [66, 2, 46],
+        "sv1_rv5_sum_mv": [0.58, 1.11, 1.69],
+        "interpretation": [
+          "PVC(Premature ...)",
+          "Normal Axis",
+          "[ Minimally Abnormal or Normal Variation ECG ]"
+        ]
+      },
+      "notes": [
+        "The Rate / PR-RR / QRS / QT lines are above the top edge of the frame.",
+        "An earlier handoff attributed 'RR 732 ms' to this sheet; that value is",
+        "printed on photo_296, not here. This sheet has no printed rate."
+      ]
+    },
+    {
+      "file": "photo_296@22-07-2026_19-16-55.jpg",
+      "source_size": [1280, 914],
+      "layout": {"columns": 1, "rows": 12, "order": "standard_12x1"},
+      "lead_label_y": {
+        "I": 87, "II": 140, "III": 203, "aVR": 260, "aVL": 328, "aVF": 396,
+        "V1": 460, "V2": 529, "V3": 601, "V4": 675, "V5": 750, "V6": 832
+      },
+      "paper": {
+        "footer": "Base:0Hz LPF:150Hz AC:50Hz EMG:On   10.0mm/mV   25.0mm/sec   EKG2000 6.03/3.25 Bionet Co., Ltd.",
+        "speed_mm_s": 25.0,
+        "gain_mm_mv": 10.0,
+        "chest_gain_mm_mv": null
+      },
+      "header_visible": "full",
+      "printed_measurements": {
+        "rate_bpm": 82,
+        "pr_ms": 160,
+        "rr_ms": 732,
+        "qrs_ms": 102,
+        "qt_ms": 348,
+        "qtc_ms": 407,
+        "prt_axes_deg": [55, 70, 49],
+        "sv1_rv5_sum_mv": [0.00, 1.64, 1.64],
+        "interpretation": [
+          "Normal Sinus Rhythm",
+          "Normal Axis",
+          "LAE(Left Atrial Enlargement)",
+          "ST abnormality, possible transmural injury(Anterolateral)",
+          "T wave inversion, possible Myocardial ischemia (High Lateral, Inferior)",
+          "[ Markedly Abnormal ECG ]"
+        ]
+      },
+      "notes": [
+        "The only sheet in the set with the whole measurement block in frame.",
+        "The header sits across leads I to III, which is why the layout detector",
+        "loses lead III here.",
+        "The sheet is curled: the row pitch runs from ~55 px at the top to ~76 px",
+        "at the bottom, so any single-pitch comb is wrong somewhere."
+      ]
+    },
+    {
+      "file": "photo_336@27-07-2026_14-57-17.jpg",
+      "source_size": [1278, 895],
+      "layout": {"columns": 1, "rows": 12, "order": "standard_12x1"},
+      "lead_label_y": {
+        "I": 42, "II": 111, "III": 176, "aVR": 248, "aVL": 316, "aVF": 385,
+        "V1": 453, "V2": 526, "V3": 596, "V4": 672, "V5": 740, "V6": 815
+      },
+      "paper": {
+        "footer": "Base:0Hz LPF:150Hz AC:50Hz EMG:On   10.0mm/mV   25.0mm/sec   EKG2000 6.03/3.25 Bionet Co., Ltd.",
+        "speed_mm_s": 25.0,
+        "gain_mm_mv": 10.0,
+        "chest_gain_mm_mv": null
+      },
+      "header_visible": "partial",
+      "printed_measurements": {
+        "prt_axes_deg": [-400, -123, 33],
+        "sv1_rv5_sum_mv": [0.32, 0.62, 0.94],
+        "interpretation": ["probable RVH", "[ Moderately Abnormal ECG ]"]
+      },
+      "notes": [
+        "The Rate / PR-RR / QRS / QT lines are above the top edge of the frame.",
+        "The printed P-R-T axes are the recorder's own out-of-range values and are",
+        "transcribed as printed."
+      ]
+    }
+  ]
+}

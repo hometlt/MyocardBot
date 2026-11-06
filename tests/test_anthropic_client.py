@@ -1,33 +1,25 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
-from PIL import Image
 
 from miocard.anthropic_client import (
     STANDARD_LEADS,
     AnthropicClient,
     AnthropicServiceError,
-    RhythmCandidate,
     TokenBalance,
 )
 from miocard.config import Settings
-from miocard.imaging import ECGImageView, ProcessedImage
+from miocard.imaging import ProcessedImage
 from miocard.models import (
     ANALYSIS_JSON_SCHEMA,
     NON_ECG_IMPRESSION,
-    RHYTHM_SCOUT_JSON_SCHEMA,
-    ECGAnalysisResponse,
     ECGImageFacts,
     ECGReport,
-    FindingBox,
-    LocalizedFinding,
-    Observation,
 )
 
 
@@ -233,41 +225,8 @@ def test_schema_sent_to_the_model_carries_no_generated_titles() -> None:
 
     assert '"title"' not in serialized
     # Dropping titles must not drop the structure the model has to follow.
-    assert set(ANALYSIS_JSON_SCHEMA["properties"]) == {"f", "r"}
-    assert set(RHYTHM_SCOUT_JSON_SCHEMA["properties"]) == {"c"}
+    assert set(ANALYSIS_JSON_SCHEMA["properties"]) == {"image_facts", "report"}
     assert "ECGReport" in ANALYSIS_JSON_SCHEMA["$defs"]
-
-
-def test_compact_json_aliases_are_short_and_verbose_input_stays_compatible() -> None:
-    observation = Observation.model_validate(
-        {"value": "Синусовый ритм", "confidence": "medium", "evidence": "Видны P"}
-    )
-    compact_observation = observation.model_dump(by_alias=True)
-
-    assert compact_observation == {"v": "Синусовый ритм", "c": "medium", "e": "Видны P"}
-    assert len(json.dumps(compact_observation, ensure_ascii=False)) < len(
-        json.dumps(observation.model_dump(), ensure_ascii=False)
-    )
-
-    response = ECGAnalysisResponse.model_validate(
-        {
-            "f": {
-                "e": True,
-                "n": "",
-                "v": ["II"],
-                "i": [],
-                "m": [],
-                "r": ["II"],
-                "u": [],
-                "ct": "25 mm/s 10 mm/mV",
-                "s": 25,
-                "g": [10],
-            },
-            "r": None,
-        }
-    )
-    assert response.image_facts.is_ecg_image
-    assert response.image_facts.readable_waveform_leads == ["II"]
 
 
 def test_wave_not_visible_is_not_mistaken_for_unreadable_lead() -> None:
@@ -383,193 +342,25 @@ def test_clinical_consistency_downgrades_ectopy_and_removes_unsupported_hypertro
     assert report.observations.rhythm.confidence == "medium"
 
 
-def test_clinical_consistency_removes_unmeasured_atrial_pattern() -> None:
-    observations = observation_block()
-    observations["pr_interval"] = {
-        "value": "P mitrale",
-        "confidence": "medium",
-        "evidence": "В II виден широкий двугорбый P без ручного измерения.",
-    }
-    report = ECGReport.model_validate(
-        {
-            "image_quality": {
-                "grade": "limited",
-                "issues": [],
-                "visible_leads": list(STANDARD_LEADS),
-                "usable_leads": list(STANDARD_LEADS),
-                "unreadable_leads": [],
-            },
-            "calibration": {
-                "raw_text": "25 mm/s 10 mm/mV",
-                "speed_mm_s": 25,
-                "gain_mm_mv": 10,
-                "gain_values_mm_mv": [10],
-                "gain_notes": "Стандартная калибровка",
-                "confidence": "high",
-                "source": "Подпись",
-            },
-            "observations": observations,
-            "possible_interpretations": [
-                {
-                    "label": "P mitrale — увеличение левого предсердия",
-                    "confidence": "medium",
-                    "supporting_evidence": ["Широкий P в II"],
-                    "contradicting_or_missing_evidence": [],
-                }
-            ],
-            "urgent_findings": [],
-            "limitations": [],
-            "recommended_checks": [],
-            "overall_confidence": "medium",
-            "concise_impression": "P mitrale, возможны признаки увеличения левого предсердия.",
-        }
-    )
-
-    AnthropicClient._apply_clinical_consistency_rules(report)
-
-    serialized = json.dumps(report.model_dump(), ensure_ascii=False).lower()
-    assert "p mitrale" not in serialized
-    assert "увеличен" not in serialized
-    assert report.observations.pr_interval.confidence == "low"
-    assert report.possible_interpretations == []
-
-
-def test_clinical_consistency_preserves_measured_chamber_patterns() -> None:
-    observations = observation_block()
-    observations["pr_interval"] = {
-        "value": "P mitrale",
-        "confidence": "medium",
-        "evidence": "P mitrale: P в II 130 мс, расстояние между вершинами 45 мс.",
-    }
-    observations["qrs_complex"] = {
-        "value": "ЭКГ-признаки гипертрофии правого желудочка",
-        "confidence": "medium",
-        "evidence": "R/S в V1 = 1,4; R V1 8 мм; S V6 4 мм, ось отклонена вправо.",
-    }
-    report = ECGReport.model_validate(
-        {
-            "image_quality": {
-                "grade": "diagnostic",
-                "issues": [],
-                "visible_leads": list(STANDARD_LEADS),
-                "usable_leads": list(STANDARD_LEADS),
-                "unreadable_leads": [],
-            },
-            "calibration": {
-                "raw_text": "25 mm/s 10 mm/mV",
-                "speed_mm_s": 25,
-                "gain_mm_mv": 10,
-                "gain_values_mm_mv": [10],
-                "gain_notes": "Стандартная калибровка",
-                "confidence": "high",
-                "source": "Подпись",
-            },
-            "observations": observations,
-            "possible_interpretations": [
-                {
-                    "label": "P mitrale: ЭКГ-признаки аномалии левого предсердия",
-                    "confidence": "medium",
-                    "supporting_evidence": ["P в II 130 мс; между вершинами 45 мс"],
-                    "contradicting_or_missing_evidence": [],
-                },
-                {
-                    "label": "ЭКГ-признаки гипертрофии правого желудочка",
-                    "confidence": "medium",
-                    "supporting_evidence": ["R/S V1 1,4; R V1 8 мм; S V6 4 мм"],
-                    "contradicting_or_missing_evidence": [],
-                },
-            ],
-            "urgent_findings": [],
-            "limitations": [],
-            "recommended_checks": ["Сопоставить с эхокардиографией"],
-            "overall_confidence": "medium",
-            "concise_impression": (
-                "P mitrale и ЭКГ-признаки гипертрофии правого желудочка."
-            ),
-        }
-    )
-
-    AnthropicClient._apply_clinical_consistency_rules(report)
-
-    assert report.observations.pr_interval.value == "P mitrale"
-    assert "гипертрофии правого желудочка" in report.observations.qrs_complex.value
-    assert len(report.possible_interpretations) == 2
-
-
-def test_clinical_consistency_turns_unconfirmed_flutter_into_differential() -> None:
-    observations = observation_block()
-    observations["rhythm"] = {
-        "value": "Регулярная узкокомплексная тахикардия; вероятно трепетание предсердий",
-        "confidence": "medium",
-        "evidence": "Повторяющиеся дефлекции видны в нескольких отведениях.",
-    }
-    report = ECGReport.model_validate(
-        {
-            "image_quality": {
-                "grade": "limited",
-                "issues": [],
-                "visible_leads": list(STANDARD_LEADS),
-                "usable_leads": list(STANDARD_LEADS),
-                "unreadable_leads": [],
-            },
-            "calibration": {
-                "raw_text": "25 mm/s",
-                "speed_mm_s": 25,
-                "gain_mm_mv": 10,
-                "gain_values_mm_mv": [10, 2.5],
-                "gain_notes": "Разное усиление",
-                "confidence": "medium",
-                "source": "Подпись",
-            },
-            "observations": observations,
-            "possible_interpretations": [
-                {
-                    "label": "Трепетание предсердий с проведением 2:1",
-                    "confidence": "medium",
-                    "supporting_evidence": ["Частота около 150/мин"],
-                    "contradicting_or_missing_evidence": [
-                        "Стабильность предсердного цикла подтверждена недостаточно"
-                    ],
-                }
-            ],
-            "urgent_findings": [],
-            "limitations": [],
-            "recommended_checks": [],
-            "overall_confidence": "medium",
-            "concise_impression": "Наиболее вероятно трепетание предсердий.",
-        }
-    )
-
-    AnthropicClient._apply_clinical_consistency_rules(report)
-
-    assert report.observations.rhythm.confidence == "low"
-    assert "фибрилляция и трепетание предсердий требуют дифференциации" in (
-        report.observations.rhythm.value
-    )
-    assert report.possible_interpretations[0].confidence == "low"
-    assert report.overall_confidence == "low"
-    assert report.concise_impression == report.observations.rhythm.value + "."
-
-
 def test_anthropic_request_and_structured_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["x-api-key"] == "secret"
         body = json.loads(request.content)
         assert body["model"] == "claude-sonnet-5"
         assert body["stream"] is False
-        assert body["max_tokens"] == 16000
-        # The multi-pass beat inventory needs somewhere to run.
-        assert body["thinking"] == {"type": "adaptive"}
-        assert body["output_config"]["effort"] == "high"
+        assert body["max_tokens"] == 3584
+        assert body["output_config"]["effort"] == "medium"
         assert body["output_config"]["format"]["type"] == "json_schema"
-        assert set(body["output_config"]["format"]["schema"]["properties"]) == {"f", "r"}
+        assert set(body["output_config"]["format"]["schema"]["properties"]) == {
+            "image_facts",
+            "report",
+        }
         # Constant instructions belong to the cacheable system prefix, so only the
         # per-image metadata and the user's context travel in the message itself.
         system = body["system"]
         assert system[0]["cache_control"] == {"type": "ephemeral"}
         assert "низкая амплитуда" in system[0]["text"]
         assert "не является насыщением" in system[0]["text"]
-        assert "f=image_facts" in system[0]["text"]
         assert body["messages"][0]["content"][0]["type"] == "image"
         prompt = body["messages"][0]["content"][1]["text"]
         assert "низкая амплитуда" not in prompt
@@ -677,8 +468,8 @@ def test_tokenator_uses_prompt_schema_and_extracts_json() -> None:
         assert body["model"] == "gpt-5.6-terra"
         assert body["stream"] is False
         assert "output_config" not in body
-        assert body["max_tokens"] == 16000
-        assert body["reasoning"] == {"enabled": True}
+        assert body["max_tokens"] == 3584
+        assert body["reasoning"] == {"enabled": False}
         # The gateway is not sent cache_control blocks, so its system stays a plain string.
         assert isinstance(body["system"], str)
         assert "JSON Schema" in body["system"]
@@ -793,8 +584,8 @@ def test_non_ecg_image_stops_after_single_pass() -> None:
         nonlocal calls
         calls += 1
         body = json.loads(request.content)
-        assert body["max_tokens"] == 16000
-        assert body["reasoning"] == {"enabled": True}
+        assert body["max_tokens"] == 3584
+        assert body["reasoning"] == {"enabled": False}
         facts = {
             "is_ecg_image": False,
             "non_ecg_reason": "Обычная фотография без ЭКГ-кривых.",
@@ -951,81 +742,6 @@ def test_identical_analysis_is_loaded_from_persistent_cache(tmp_path: Path) -> N
     assert calls == 1
 
 
-def test_rhythm_scout_uses_compact_prompt_and_persistent_cache(tmp_path: Path) -> None:
-    calls = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal calls
-        calls += 1
-        body = json.loads(request.content)
-        assert body["max_tokens"] == 4096
-        assert len(body["system"]) < 6000
-        assert "image_facts" not in body["system"]
-        return httpx.Response(
-            200,
-            json={
-                "content": [
-                    {
-                        "type": "text",
-                        "text": json.dumps(
-                            {
-                                "candidates": [
-                                    {
-                                        "finding": "Преждевременный узкий комплекс",
-                                        "confidence": "medium",
-                                        "evidence": "Интервал R–R резко укорочен.",
-                                        "qrs_width": "narrow",
-                                        "box": {
-                                            "top": 200,
-                                            "left": 300,
-                                            "bottom": 800,
-                                            "right": 400,
-                                        },
-                                    }
-                                ]
-                            },
-                            ensure_ascii=False,
-                        ),
-                    }
-                ],
-                "stop_reason": "end_turn",
-                "usage": {"input_tokens": 800, "output_tokens": 80},
-            },
-        )
-
-    async def scenario() -> None:
-        settings = Settings(
-            telegram_bot_token="123456:telegram-secret",
-            anthropic_api_key="sk-fp-test-key",
-            analysis_cache_enabled=True,
-            analysis_cache_dir=tmp_path,
-            _env_file=None,
-        )
-        client = AnthropicClient(settings, transport=httpx.MockTransport(handler))
-        image = ProcessedImage(
-            data=b"scout-image",
-            media_type="image/png",
-            width=600,
-            height=800,
-            estimated_visual_tokens=660,
-            blur_score=100,
-            brightness=220,
-            contrast=40,
-        )
-        view = ECGImageView(name="left", image=image, left=0, right=600)
-        try:
-            first = await client._analyze_rhythm_view(view, "gpt-5.6-sol")
-            second = await client._analyze_rhythm_view(view, "gpt-5.6-sol")
-        finally:
-            await client.close()
-
-        assert first == second
-        assert len(first.candidates) == 1
-
-    asyncio.run(scenario())
-    assert calls == 1
-
-
 def test_infers_any_cropped_lead_from_existing_waveform_row() -> None:
     labeled = ["II", "III", "aVR", "aVF", "V1", "V2", "V3", "V5", "V6"]
     facts = ECGImageFacts.model_validate(
@@ -1065,319 +781,3 @@ def test_infers_any_cropped_lead_from_existing_waveform_row() -> None:
     assert normalized.readable_waveform_leads == normalized.visible_lead_labels
     assert normalized.missing_standard_leads == []
     assert [item.lead for item in normalized.inferred_leads] == ["I", "aVL", "V4"]
-
-
-def rhythm_report(rhythm_value: str, verdicts: list[dict[str, object]]) -> ECGReport:
-    observations = observation_block()
-    observations["rhythm"] = {
-        "value": rhythm_value,
-        "confidence": "medium",
-        "evidence": "Ритм оценен по самой читаемой строке.",
-    }
-    return ECGReport.model_validate(
-        {
-            "image_quality": {
-                "grade": "diagnostic",
-                "issues": [],
-                "visible_leads": list(STANDARD_LEADS),
-                "usable_leads": list(STANDARD_LEADS),
-                "unreadable_leads": [],
-            },
-            "calibration": {
-                "raw_text": "25 mm/s 10 mm/mV",
-                "speed_mm_s": 25,
-                "gain_mm_mv": 10,
-                "gain_values_mm_mv": [10],
-                "gain_notes": "Одно усиление",
-                "confidence": "high",
-                "source": "Подпись",
-            },
-            "observations": observations,
-            "possible_interpretations": [],
-            "urgent_findings": [],
-            "limitations": [],
-            "recommended_checks": [],
-            "overall_confidence": "medium",
-            "concise_impression": rhythm_value + ".",
-            "localized_findings": [],
-            "candidate_verdicts": verdicts,
-        }
-    )
-
-
-def premature_candidate(center_x: int, kind: str = "premature") -> RhythmCandidate:
-    box = FindingBox(top=200, left=center_x - 20, bottom=800, right=center_x + 20)
-    return RhythmCandidate(
-        finding=LocalizedFinding(
-            finding="Преждевременный комплекс по R–R",
-            related_observation="rhythm",
-            box=box,
-        ),
-        confidence="medium",
-        evidence="Резко укороченный R–R.",
-        center_x=center_x,
-        qrs_width="uncertain",
-        source_view="timing",
-        kind=kind,
-    )
-
-
-def test_reconciliation_drops_a_candidate_the_full_sheet_pass_rejected() -> None:
-    report = rhythm_report(
-        "Синусовый ритм",
-        [
-            {"candidate": 1, "verdict": "confirmed", "reason": "Ранний QRS в двух отведениях."},
-            {"candidate": 2, "verdict": "rejected", "reason": "Артефакт движения в одной строке."},
-        ],
-    )
-
-    reconciled = AnthropicClient._reconcile_multiscale_report(
-        report,
-        [premature_candidate(210), premature_candidate(700)],
-    )
-
-    assert reconciled.observations.rhythm.value == (
-        "Синусовый ритм с одним преждевременным комплексом"
-    )
-    centers = [
-        round((item.box.left + item.box.right) / 2) for item in reconciled.localized_findings
-    ]
-    assert centers == [210]
-    assert "непроверенные кандидаты" not in reconciled.observations.rhythm.evidence
-
-
-def test_reconciliation_marks_unjudged_candidates_without_asserting_them() -> None:
-    report = rhythm_report("Синусовый ритм без явной эктопии", [])
-
-    reconciled = AnthropicClient._reconcile_multiscale_report(
-        report,
-        [premature_candidate(210), premature_candidate(700)],
-    )
-
-    # An unjudged candidate is a search hint, so it is shown to the doctor but never
-    # promoted into the reported rhythm.
-    assert reconciled.observations.rhythm.value == "Синусовый ритм без явной эктопии"
-    assert reconciled.concise_impression == "Синусовый ритм без явной эктопии."
-    assert "непроверенные кандидаты в позициях x≈210, 700/1000" in (
-        reconciled.observations.rhythm.evidence
-    )
-    assert [item.finding for item in reconciled.localized_findings] == [
-        "Кандидат: преждевременный комплекс, требует проверки"
-    ] * 2
-
-
-def test_reconciliation_keeps_a_confirmed_pause_out_of_the_ectopy_count() -> None:
-    report = rhythm_report(
-        "Синусовый ритм",
-        [
-            {"candidate": 1, "verdict": "confirmed", "reason": "Ранний QRS."},
-            {"candidate": 2, "verdict": "confirmed", "reason": "P без последующего QRS."},
-        ],
-    )
-
-    reconciled = AnthropicClient._reconcile_multiscale_report(
-        report,
-        [premature_candidate(210), premature_candidate(700, kind="pause")],
-    )
-
-    assert reconciled.observations.rhythm.value == (
-        "Синусовый ритм с одним преждевременным комплексом"
-    )
-    assert len(reconciled.localized_findings) == 2
-
-
-def test_multiscale_analysis_merges_three_events_and_reconciles_the_report() -> None:
-    facts = {
-        "is_ecg_image": True,
-        "non_ecg_reason": "",
-        "visible_lead_labels": ["I", "II"],
-        "inferred_leads": [],
-        "missing_standard_leads": [],
-        "readable_waveform_leads": ["I", "II"],
-        "unreadable_waveform_leads": [],
-        "calibration_text": "25 mm/s 10 mm/mV",
-        "speed_mm_s": 25,
-        "gain_values_mm_mv": [10],
-    }
-
-    def report_data(
-        rhythm_value: str,
-        findings: list[dict[str, object]],
-    ) -> dict[str, object]:
-        observations = observation_block()
-        observations["rhythm"] = {
-            "value": rhythm_value,
-            "confidence": "medium",
-            "evidence": "Ранние комплексы синхронно видны в нескольких отведениях.",
-        }
-        return {
-            "image_quality": {
-                "grade": "diagnostic",
-                "issues": [],
-                "visible_leads": ["I", "II"],
-                "usable_leads": ["I", "II"],
-                "unreadable_leads": [],
-            },
-            "calibration": {
-                "raw_text": "25 mm/s 10 mm/mV",
-                "speed_mm_s": 25,
-                "gain_mm_mv": 10,
-                "gain_values_mm_mv": [10],
-                "gain_notes": "Одно усиление",
-                "confidence": "high",
-                "source": "Подпись",
-            },
-            "observations": observations,
-            "possible_interpretations": [],
-            "urgent_findings": [],
-            "limitations": [],
-            "recommended_checks": [],
-            "overall_confidence": "medium",
-            "concise_impression": rhythm_value + ".",
-            "localized_findings": findings,
-            "candidate_verdicts": [
-                {
-                    "candidate": number,
-                    "verdict": "confirmed",
-                    "reason": "Ранний комплекс виден в двух отведениях.",
-                }
-                for number in (1, 2, 3)
-            ],
-        }
-
-    def finding(label: str, left: int, right: int) -> dict[str, object]:
-        return {
-            "finding": label,
-            "related_observation": "rhythm",
-            "box": {"top": 200, "left": left, "bottom": 800, "right": right},
-        }
-
-    def scout_candidate(
-        label: str,
-        left: int,
-        right: int,
-        qrs_width: str,
-    ) -> dict[str, object]:
-        return {
-            "finding": label,
-            "confidence": "medium",
-            "evidence": "Ранний комплекс виден в нескольких отведениях.",
-            "qrs_width": qrs_width,
-            "box": {"top": 200, "left": left, "bottom": 800, "right": right},
-        }
-
-    calls = 0
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal calls
-        calls += 1
-        body = json.loads(request.content)
-        prompt = body["messages"][0]["content"][1]["text"]
-        if body["max_tokens"] <= 4096:
-            assert len(body["system"]) < 6000
-            assert "image_facts" not in body["system"]
-            if "x=0–600/1000" in prompt:
-                candidates = [
-                    scout_candidate(
-                        "Преждевременный широкий комплекс", 300, 400, "wide"
-                    )
-                ]
-            elif "x=480–1000/1000" in prompt:
-                candidates = [
-                    scout_candidate(
-                        "Первый преждевременный узкий комплекс", 425, 505, "narrow"
-                    ),
-                    scout_candidate(
-                        "Второй преждевременный узкий комплекс", 775, 850, "narrow"
-                    ),
-                ]
-            else:
-                assert "x=600–1000/1000" in prompt
-                candidates = [
-                    scout_candidate(
-                        "Первый преждевременный узкий комплекс", 250, 360, "narrow"
-                    ),
-                    scout_candidate(
-                        "Второй преждевременный узкий комплекс", 700, 810, "narrow"
-                    ),
-                ]
-            return httpx.Response(
-                200,
-                json={
-                    "content": [
-                        {"type": "text", "text": json.dumps({"candidates": candidates})}
-                    ],
-                    "stop_reason": "end_turn",
-                    "usage": {"input_tokens": 1000, "output_tokens": 100},
-                },
-            )
-        if "C1:" in prompt and calls == 4:
-            return httpx.Response(
-                200,
-                json={
-                    "content": [{"type": "text", "text": '{"image_facts":'}],
-                    "stop_reason": "end_turn",
-                    "usage": {"input_tokens": 10, "output_tokens": 2},
-                },
-            )
-        assert "C1:" in prompt and "C2:" in prompt and "C3:" in prompt
-        assert "Предыдущая попытка" in body["messages"][0]["content"][-1]["text"]
-        # The reconciliation guard must still make the result consistent if the
-        # final full-sheet pass repeats its original undercount.
-        report = report_data(
-            "Синусовый ритм с одним преждевременным комплексом",
-            [finding("Преждевременный широкий комплекс", 180, 240)],
-        )
-        return httpx.Response(
-            200,
-            json={
-                "content": [
-                    {
-                        "type": "text",
-                        "text": json.dumps({"image_facts": facts, "report": report}),
-                    }
-                ],
-                "stop_reason": "end_turn",
-                "usage": {"input_tokens": 10, "output_tokens": 10},
-            },
-        )
-
-    image_buffer = io.BytesIO()
-    Image.new("RGB", (1000, 800), "white").save(image_buffer, format="PNG")
-
-    async def scenario() -> None:
-        settings = Settings(
-            telegram_bot_token="123456:telegram-secret",
-            anthropic_api_key="sk-fp-test-key",
-            analysis_cache_enabled=False,
-            _env_file=None,
-        )
-        client = AnthropicClient(settings, transport=httpx.MockTransport(handler))
-        image = ProcessedImage(
-            data=image_buffer.getvalue(),
-            media_type="image/png",
-            width=1000,
-            height=800,
-            estimated_visual_tokens=1036,
-            blur_score=100,
-            brightness=220,
-            contrast=40,
-        )
-        try:
-            report = await client.analyze_multiscale(image)
-        finally:
-            await client.close()
-
-        assert "тремя преждевременными комплексами" in report.observations.rhythm.value
-        assert "тремя преждевременными комплексами" in report.concise_impression
-        assert len(report.localized_findings) == 3
-        centers = [
-            round((item.box.left + item.box.right) / 2)
-            for item in report.localized_findings
-        ]
-        assert centers == [210, 722, 902]
-        assert client.usage_stats.analyses == 1
-        assert client.usage_stats.requests == 5
-
-    asyncio.run(scenario())
-    assert calls == 5

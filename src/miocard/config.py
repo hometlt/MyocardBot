@@ -5,18 +5,15 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 ANTHROPIC_MODELS = {
     "claude-sonnet-5",
     "claude-opus-4-6",
     "claude-opus-4-8",
-    "claude-opus-5",
     "claude-fable-5",
 }
-# claude-opus-4-6 is the only supported model without the xhigh effort level.
-NO_XHIGH_MODELS = {"claude-opus-4-6"}
 TOKENATOR_VISION_MODELS = {"gpt-5.6-sol", "gpt-5.6-terra", "gemini-3.5-flash"}
 SUPPORTED_MODELS = ANTHROPIC_MODELS | TOKENATOR_VISION_MODELS
 SUPPORTED_EFFORTS = {"low", "medium", "high", "max", "xhigh"}
@@ -37,34 +34,21 @@ class Settings(BaseSettings):
     telegram_bot_token: SecretStr
     anthropic_api_key: SecretStr
     anthropic_model: str = "gpt-5.6-sol"
-    anthropic_effort: str = "high"
-    # The enlarged-fragment pass answers one narrow question, so it does not need the
-    # deliberation budget of the full-sheet report.
-    anthropic_scout_effort: str = "low"
-    # The specification asks for a multi-pass beat inventory, a reverse scan and a final
-    # consistency check. Without reasoning that work has nowhere to happen except inside
-    # the compact JSON the same specification asks to keep short.
-    anthropic_thinking_enabled: bool = True
-    # Reasoning tokens are billed as output, so the visible report needs headroom on top
-    # of them. The benchmark averages ~2 860 tokens of report by itself.
-    anthropic_max_tokens: int = Field(default=16_000, ge=1024, le=64_000)
-    anthropic_scout_max_tokens: int = Field(default=4096, ge=512, le=16_000)
+    anthropic_effort: str = "medium"
+    # The benchmark averages ~2 860 output tokens, so a 2 304 ceiling truncated the
+    # longest reports and threw away the whole request.
+    anthropic_max_tokens: int = Field(default=3584, ge=1024, le=32_000)
     anthropic_api_url: str | None = None
-    anthropic_timeout_seconds: float = Field(default=300.0, ge=10, le=600)
+    anthropic_timeout_seconds: float = Field(default=120.0, ge=10, le=600)
     prompt_cache_enabled: bool = True
 
     allowed_user_ids: Annotated[frozenset[int], NoDecode] = frozenset()
     moderator_user_ids: Annotated[frozenset[int], NoDecode] = frozenset()
-    admin_audit_include_content: bool = True
     max_image_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=50 * 1024 * 1024)
     max_concurrent_analyses: int = Field(default=1, ge=1, le=20)
     user_cooldown_seconds: float = Field(default=10.0, ge=0, le=3600)
     analysis_cache_enabled: bool = False
     analysis_cache_dir: Path = Path(".cache/miocard")
-    release_notification_state_file: Path = (
-        PROJECT_ROOT / ".cache/miocard/release-notifications.json"
-    )
-    support_db_file: Path = PROJECT_ROOT / ".cache/miocard/support.sqlite3"
 
     @field_validator("allowed_user_ids", "moderator_user_ids", mode="before")
     @classmethod
@@ -83,12 +67,12 @@ class Settings(BaseSettings):
             raise ValueError(f"ANTHROPIC_MODEL must be one of: {choices}")
         return value
 
-    @field_validator("anthropic_effort", "anthropic_scout_effort")
+    @field_validator("anthropic_effort")
     @classmethod
-    def validate_effort(cls, value: str, info: ValidationInfo) -> str:
+    def validate_effort(cls, value: str) -> str:
         if value not in SUPPORTED_EFFORTS:
             choices = ", ".join(sorted(SUPPORTED_EFFORTS))
-            raise ValueError(f"{info.field_name.upper()} must be one of: {choices}")
+            raise ValueError(f"ANTHROPIC_EFFORT must be one of: {choices}")
         return value
 
     @model_validator(mode="after")
@@ -97,11 +81,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"{self.anthropic_model} is supported only through the Tokenator gateway"
             )
-        if self.anthropic_model in NO_XHIGH_MODELS and "xhigh" in {
-            self.anthropic_effort,
-            self.anthropic_scout_effort,
-        }:
-            raise ValueError(f"xhigh effort is not supported by {self.anthropic_model}")
+        if self.anthropic_model == "claude-opus-4-6" and self.anthropic_effort == "xhigh":
+            raise ValueError("xhigh effort is not supported by claude-opus-4-6")
         return self
 
     @property

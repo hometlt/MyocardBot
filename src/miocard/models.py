@@ -15,77 +15,65 @@ def _lower_enum(value: object) -> object:
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid")
 
 
 class ImageQuality(StrictModel):
-    grade: Literal["diagnostic", "limited", "non_diagnostic"] = Field(
-        alias="g", description="grade"
-    )
-    issues: list[str] = Field(alias="i", description="issues")
-    visible_leads: list[str] = Field(alias="v", description="visible_leads")
-    usable_leads: list[str] = Field(alias="u", description="usable_leads")
-    unreadable_leads: list[str] = Field(alias="x", description="unreadable_leads")
+    grade: Literal["diagnostic", "limited", "non_diagnostic"]
+    issues: list[str]
+    visible_leads: list[str]
+    usable_leads: list[str]
+    unreadable_leads: list[str]
 
     normalize_grade = field_validator("grade", mode="before")(_lower_enum)
 
 
 class Calibration(StrictModel):
-    raw_text: str = Field(alias="r", description="raw_text")
-    speed_mm_s: float | None = Field(alias="s", description="speed_mm_s")
-    gain_mm_mv: float | None = Field(alias="g", description="gain_mm_mv")
-    gain_values_mm_mv: list[float] = Field(alias="gs", description="gain_values_mm_mv")
-    gain_notes: str = Field(alias="n", description="gain_notes")
-    confidence: Literal["high", "medium", "low"] = Field(
-        alias="c", description="confidence"
-    )
-    source: str = Field(alias="src", description="source")
+    raw_text: str
+    speed_mm_s: float | None
+    gain_mm_mv: float | None
+    gain_values_mm_mv: list[float]
+    gain_notes: str
+    confidence: Literal["high", "medium", "low"]
+    source: str
 
     normalize_confidence = field_validator("confidence", mode="before")(_lower_enum)
 
 
 class Observation(StrictModel):
-    value: str = Field(alias="v", description="value")
-    confidence: Literal["high", "medium", "low"] = Field(
-        alias="c", description="confidence"
-    )
-    evidence: str = Field(alias="e", description="evidence")
+    value: str
+    confidence: Literal["high", "medium", "low"]
+    evidence: str
 
     normalize_confidence = field_validator("confidence", mode="before")(_lower_enum)
 
 
 class ECGObservations(StrictModel):
-    rhythm: Observation = Field(alias="r", description="rhythm")
-    heart_rate: Observation = Field(alias="hr", description="heart_rate")
-    pr_interval: Observation = Field(alias="pr", description="pr_interval")
-    qrs_complex: Observation = Field(alias="qrs", description="qrs_complex")
-    electrical_axis: Observation = Field(alias="ax", description="electrical_axis")
-    q_waves: Observation = Field(alias="q", description="q_waves")
-    r_progression: Observation = Field(alias="rp", description="r_progression")
-    st_t: Observation = Field(alias="st", description="st_t")
-    qt_qtc: Observation = Field(alias="qt", description="qt_qtc")
+    rhythm: Observation
+    heart_rate: Observation
+    pr_interval: Observation
+    qrs_complex: Observation
+    electrical_axis: Observation
+    q_waves: Observation
+    r_progression: Observation
+    st_t: Observation
+    qt_qtc: Observation
 
 
 class Interpretation(StrictModel):
-    label: str = Field(alias="l", description="label")
-    confidence: Literal["high", "medium", "low"] = Field(
-        alias="c", description="confidence"
-    )
-    supporting_evidence: list[str] = Field(alias="s", description="supporting_evidence")
-    contradicting_or_missing_evidence: list[str] = Field(
-        alias="x", description="contradicting_or_missing_evidence"
-    )
+    label: str
+    confidence: Literal["high", "medium", "low"]
+    supporting_evidence: list[str]
+    contradicting_or_missing_evidence: list[str]
 
     normalize_confidence = field_validator("confidence", mode="before")(_lower_enum)
 
 
 class UrgentFinding(StrictModel):
-    finding: str = Field(alias="f", description="finding")
-    confidence: Literal["high", "medium", "low"] = Field(
-        alias="c", description="confidence"
-    )
-    rationale: str = Field(alias="r", description="rationale")
-    recommended_action: str = Field(alias="a", description="recommended_action")
+    finding: str
+    confidence: Literal["high", "medium", "low"]
+    rationale: str
+    recommended_action: str
 
     normalize_confidence = field_validator("confidence", mode="before")(_lower_enum)
 
@@ -93,10 +81,10 @@ class UrgentFinding(StrictModel):
 class FindingBox(StrictModel):
     """Normalized coordinates relative to the exact image shown to the model."""
 
-    top: int = Field(ge=0, le=1000, alias="t", description="top")
-    left: int = Field(ge=0, le=1000, alias="l", description="left")
-    bottom: int = Field(ge=0, le=1000, alias="b", description="bottom")
-    right: int = Field(ge=0, le=1000, alias="r", description="right")
+    top: int = Field(ge=0, le=1000)
+    left: int = Field(ge=0, le=1000)
+    bottom: int = Field(ge=0, le=1000)
+    right: int = Field(ge=0, le=1000)
 
     @model_validator(mode="after")
     def validate_extent(self) -> FindingBox:
@@ -108,7 +96,7 @@ class FindingBox(StrictModel):
 
 
 class LocalizedFinding(StrictModel):
-    finding: str = Field(max_length=80, alias="f", description="finding")
+    finding: str = Field(max_length=80)
     related_observation: Literal[
         "rhythm",
         "heart_rate",
@@ -120,55 +108,21 @@ class LocalizedFinding(StrictModel):
         "st_t",
         "qt_qtc",
         "other",
-    ] = Field(alias="o", description="related_observation")
-    box: FindingBox = Field(alias="b", description="box")
-
-
-class CandidateVerdict(StrictModel):
-    """Ruling of the full-sheet pass on one candidate from the trusted context."""
-
-    candidate: int = Field(
-        ge=1, le=20, alias="n", description="number of the Cn candidate being judged"
-    )
-    verdict: Literal["confirmed", "rejected", "uncertain"] = Field(
-        alias="v", description="verdict"
-    )
-    reason: str = Field(max_length=160, alias="r", description="short visual reason")
-
-    normalize_verdict = field_validator("verdict", mode="before")(_lower_enum)
+    ]
+    box: FindingBox
 
 
 class ECGReport(StrictModel):
-    image_quality: ImageQuality = Field(alias="q", description="image_quality")
-    calibration: Calibration = Field(alias="cal", description="calibration")
-    observations: ECGObservations = Field(alias="o", description="observations")
-    possible_interpretations: list[Interpretation] = Field(
-        alias="dx", description="possible_interpretations"
-    )
-    urgent_findings: list[UrgentFinding] = Field(alias="urg", description="urgent_findings")
-    limitations: list[str] = Field(alias="lim", description="limitations")
-    recommended_checks: list[str] = Field(alias="chk", description="recommended_checks")
-    overall_confidence: Literal["high", "medium", "low"] = Field(
-        alias="c", description="overall_confidence"
-    )
-    concise_impression: str = Field(
-        alias="sum", description="concise_impression in Russian"
-    )
-    localized_findings: list[LocalizedFinding] = Field(
-        default_factory=list,
-        max_length=3,
-        alias="m",
-        description="localized_findings",
-    )
-    candidate_verdicts: list[CandidateVerdict] = Field(
-        default_factory=list,
-        max_length=12,
-        alias="cv",
-        description=(
-            "one entry per Cn candidate of the trusted context; empty when no such "
-            "context was supplied"
-        ),
-    )
+    image_quality: ImageQuality
+    calibration: Calibration
+    observations: ECGObservations
+    possible_interpretations: list[Interpretation]
+    urgent_findings: list[UrgentFinding]
+    limitations: list[str]
+    recommended_checks: list[str]
+    overall_confidence: Literal["high", "medium", "low"]
+    concise_impression: str = Field(description="Short preliminary impression in Russian")
+    localized_findings: list[LocalizedFinding] = Field(default_factory=list, max_length=3)
 
     normalize_confidence = field_validator("overall_confidence", mode="before")(_lower_enum)
 
@@ -192,74 +146,36 @@ def compact_schema(schema: object) -> object:
     return schema
 
 
-class RhythmScoutCandidate(StrictModel):
-    finding: str = Field(max_length=80, alias="f", description="finding")
-    confidence: Literal["high", "medium", "low"] = Field(
-        alias="c", description="confidence"
-    )
-    evidence: str = Field(max_length=240, alias="e", description="evidence")
-    qrs_width: Literal["narrow", "wide", "uncertain"] = Field(
-        alias="w", description="qrs_width"
-    )
-    kind: Literal["premature", "pause"] = Field(
-        default="premature",
-        alias="k",
-        description="premature complex, or a pause/dropped beat",
-    )
-    box: FindingBox = Field(alias="b", description="box")
-
-    normalize_confidence = field_validator("confidence", mode="before")(_lower_enum)
-    normalize_kind = field_validator("kind", mode="before")(_lower_enum)
-
-
-class RhythmScoutResponse(StrictModel):
-    candidates: list[RhythmScoutCandidate] = Field(
-        default_factory=list,
-        max_length=5,
-        alias="c",
-        description="candidates",
-    )
-
-
-RHYTHM_SCOUT_JSON_SCHEMA = compact_schema(RhythmScoutResponse.model_json_schema())
-
-
 REPORT_JSON_SCHEMA = ECGReport.model_json_schema()
 
 
 class InferredLead(StrictModel):
-    lead: Literal["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"] = Field(
-        alias="l", description="lead"
-    )
-    confidence: Literal["high", "medium"] = Field(alias="c", description="confidence")
-    evidence: str = Field(alias="e", description="evidence")
+    lead: Literal["I", "II", "III", "aVR", "aVL", "aVF", "V1", "V2", "V3", "V4", "V5", "V6"]
+    confidence: Literal["high", "medium"]
+    evidence: str
 
     normalize_confidence = field_validator("confidence", mode="before")(_lower_enum)
 
 
 class ECGImageFacts(StrictModel):
-    is_ecg_image: bool = Field(alias="e", description="is_ecg_image")
-    non_ecg_reason: str = Field(alias="n", description="non_ecg_reason")
-    visible_lead_labels: list[str] = Field(alias="v", description="visible_lead_labels")
-    inferred_leads: list[InferredLead] = Field(alias="i", description="inferred_leads")
-    missing_standard_leads: list[str] = Field(alias="m", description="missing_standard_leads")
-    readable_waveform_leads: list[str] = Field(
-        alias="r", description="readable_waveform_leads"
-    )
-    unreadable_waveform_leads: list[str] = Field(
-        alias="u", description="unreadable_waveform_leads"
-    )
-    calibration_text: str = Field(alias="ct", description="calibration_text")
-    speed_mm_s: float | None = Field(alias="s", description="speed_mm_s")
-    gain_values_mm_mv: list[float] = Field(alias="g", description="gain_values_mm_mv")
+    is_ecg_image: bool
+    non_ecg_reason: str
+    visible_lead_labels: list[str]
+    inferred_leads: list[InferredLead]
+    missing_standard_leads: list[str]
+    readable_waveform_leads: list[str]
+    unreadable_waveform_leads: list[str]
+    calibration_text: str
+    speed_mm_s: float | None
+    gain_values_mm_mv: list[float]
 
 
 IMAGE_FACTS_JSON_SCHEMA = compact_schema(ECGImageFacts.model_json_schema())
 
 
 class ECGAnalysisResponse(StrictModel):
-    image_facts: ECGImageFacts = Field(alias="f", description="image_facts")
-    report: ECGReport | None = Field(alias="r", description="report")
+    image_facts: ECGImageFacts
+    report: ECGReport | None
 
 
 ANALYSIS_JSON_SCHEMA = compact_schema(ECGAnalysisResponse.model_json_schema())

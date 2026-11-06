@@ -4,9 +4,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install --no-cache-dir .
@@ -15,3 +12,4 @@ RUN useradd --create-home --uid 10001 botuser
 USER botuser
 
 CMD ["miocard-bot"]
+
