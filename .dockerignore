@@ -1,0 +1,17 @@
+.git
+.github
+.venv
+data
+output
+tmp
+tmp-grid
+tmp-test-results
+examples
+scripts
+tests
+.cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+*.egg-info
+.env

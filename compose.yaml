@@ -1,0 +1,19 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    init: true
+    environment:
+      # Inside the image the package lives in site-packages, so PROJECT_ROOT
+      # resolves outside the writable tree. Keep every state file on the volume.
+      ANALYSIS_CACHE_DIR: /data/cache
+      RELEASE_NOTIFICATION_STATE_FILE: /data/release-notifications.json
+      SUPPORT_DB_FILE: /data/support.sqlite3
+    volumes:
+      - ./data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
